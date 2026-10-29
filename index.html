@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nørre News · Writers</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">Nørre News <span>Writers' Desk</span></div>
+    <div class="user" id="user-box" hidden>
+      <span id="user-email"></span>
+      <button class="ghost" id="logout-btn" type="button">Log out</button>
+    </div>
+  </header>
+
+  <!-- Shown when firebase-config.js hasn't been filled in -->
+  <section class="panel notice" id="setup-notice" hidden>
+    <h2>Almost there</h2>
+    <p>This writer site isn't connected to Firebase yet. Paste your Firebase settings into <code>firebase-config.js</code> (see the README), push, and reload this page.</p>
+  </section>
+
+  <!-- LOGIN -->
+  <section class="panel login" id="login-view" hidden>
+    <h1>Writer login</h1>
+    <p class="muted">Only the Nørre News writers can log in here.</p>
+    <form id="login-form">
+      <label>Email
+        <input type="email" id="login-email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary" id="login-btn">Log in</button>
+      <p class="error" id="login-error" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- DASHBOARD -->
+  <main id="dashboard" hidden>
+    <nav class="tabs" id="tabs" aria-label="Newsletter sections"></nav>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="section-title"></h2>
+            <p class="muted" id="section-hint"></p>
+          </div>
+          <button class="primary" id="new-btn" type="button">+ New post</button>
+        </div>
+        <ul class="posts" id="post-list"></ul>
+      </section>
+
+      <section class="panel editor" id="editor" hidden>
+        <h2 id="editor-title">New post</h2>
+        <form id="post-form">
+          <label id="f-title-wrap"><span id="f-title-label">Headline</span>
+            <input type="text" id="f-title" maxlength="200">
+          </label>
+          <label id="f-tag-wrap"><span id="f-tag-label">Tag</span>
+            <input type="text" id="f-tag" maxlength="60">
+          </label>
+          <label id="f-date-wrap">Event date <small>(leave empty for "TBC")</small>
+            <input type="date" id="f-date">
+          </label>
+          <label><span id="f-body-label">Text</span> <small>(press Enter for a new paragraph)</small>
+            <textarea id="f-body" rows="8" maxlength="5000" required></textarea>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="f-published"> Published (visible on the website)
+          </label>
+          <div class="actions">
+            <button type="submit" class="primary" id="save-btn">Save</button>
+            <button type="button" class="ghost" id="cancel-btn">Cancel</button>
+          </div>
+          <p class="error" id="save-error" role="alert"></p>
+        </form>
+      </section>
+    </div>
+
+    <p class="footer-link"><a id="site-link" href="https://senuja-ai.github.io/newsletter/" target="_blank" rel="noopener">View the live newsletter ↗</a></p>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>

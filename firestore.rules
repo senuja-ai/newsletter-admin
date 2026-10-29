@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// Security rules for Nørre News.
+// Paste this into Firebase console → Firestore Database → Rules → Publish.
+// Replace the two emails below with your writers' login emails.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isWriter() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'writer1@example.com',
+          'writer2@example.com'
+        ];
+    }
+
+    function validPost() {
+      let d = request.resource.data;
+      return d.section in ['feature', 'news', 'events', 'spotlight', 'corner', 'gossip', 'quote']
+        && d.title is string && d.title.size() <= 200
+        && d.tag is string && d.tag.size() <= 60
+        && d.date is string && d.date.size() <= 10
+        && d.body is string && d.body.size() > 0 && d.body.size() <= 5000
+        && d.published is bool;
+    }
+
+    match /posts/{postId} {
+      // Anyone can read published posts; writers can also read drafts.
+      allow read: if resource.data.published == true || isWriter();
+      // Only the writers can create, edit or delete.
+      allow create, update: if isWriter() && validPost();
+      allow delete: if isWriter();
+    }
+  }
+}
