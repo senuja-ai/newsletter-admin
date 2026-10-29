@@ -7,7 +7,7 @@
 //
 // Use the SAME values in both the newsletter and the newsletter-admin folders.
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyDWdP1CSjoQxyjc5mHiA_sHZaHSWjVwOHs",
   authDomain: "norre-news.firebaseapp.com",
   projectId: "norre-news",

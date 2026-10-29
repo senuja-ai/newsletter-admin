@@ -91,5 +91,18 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="admin.js"></script>
+  <script>
+    // Safety net: if the writer site fails to start (e.g. a typo in firebase-config.js), say so instead of showing a blank page.
+    setTimeout(function () {
+      var ids = ['setup-notice', 'login-view', 'dashboard'];
+      var anyVisible = ids.some(function (id) { return !document.getElementById(id).hidden; });
+      if (!anyVisible) {
+        var n = document.getElementById('setup-notice');
+        n.querySelector('h2').textContent = 'The writer site could not start';
+        n.querySelector('p').innerHTML = 'Check <code>firebase-config.js</code>: the settings line must start with <code>export const firebaseConfig = {</code>. Then push again and reload.';
+        n.hidden = false;
+      }
+    }, 5000);
+  </script>
 </body>
 </html>
