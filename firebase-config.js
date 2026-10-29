@@ -7,11 +7,12 @@
 //
 // Use the SAME values in both the newsletter and the newsletter-admin folders.
 
-export const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY",
-  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_SENDER_ID",
-  appId: "PASTE_APP_ID"
+const firebaseConfig = {
+  apiKey: "AIzaSyDWdP1CSjoQxyjc5mHiA_sHZaHSWjVwOHs",
+  authDomain: "norre-news.firebaseapp.com",
+  projectId: "norre-news",
+  storageBucket: "norre-news.firebasestorage.app",
+  messagingSenderId: "427748928236",
+  appId: "1:427748928236:web:7924d4c42d5b694bab53c9",
+  measurementId: "G-EV1PGHMTJ2"
 };

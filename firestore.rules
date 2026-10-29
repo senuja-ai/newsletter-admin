@@ -10,8 +10,7 @@ service cloud.firestore {
     function isWriter() {
       return request.auth != null
         && request.auth.token.email in [
-          'writer1@example.com',
-          'writer2@example.com'
+          'senujaganganath@gmail.com'
         ];
     }
 
