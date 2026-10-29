@@ -15,6 +15,38 @@ const SECTIONS = [
   { key: 'quote',     label: 'Quote',          title: null,       tag: 'Said by',       body: 'Quote', hint: 'The website shows the newest published quote (at the bottom of Student Corner).' },
 ];
 
+// What the newsletter shows right now (the default text in newsletter/index.html).
+// "Import current content" turns these into editable, published posts.
+// Listed in the order they appear on the website.
+const DEFAULTS = {
+  feature: [
+    { title: 'Welcome to our very first issue!', body: "This newsletter is written by students, for students. Every issue we'll share what's happening around school, upcoming events and celebrations, and the people who make Nørre what it is.\nHave an idea for a story, a photo you'd like to share, or a shout-out for a fellow student? Get in touch using the contact section at the bottom of the page. Contributions from everyone are welcome." },
+  ],
+  news: [
+    { tag: 'Halloween', title: 'Halloween parties this weekend', body: "Halloween is almost here, and there's more than one party to choose from. Dig out your costume, check with the organisers for times and places, and get ready for a spooky weekend." },
+    { tag: 'Out & About', title: 'Plans for light art in Copenhagen', body: "As the evenings get darker, Copenhagen lights up with art installations around the city. We're planning a group trip to see them. Let us know if you'd like to join!" },
+  ],
+  events: [
+    { title: 'Halloween', date: '2026-10-31', body: 'Costumes, parties and plenty of sweets. Share your best costume photos with the newsletter team!' },
+    { title: 'Christmas Celebrations', tag: 'Dec', body: 'Festive fun before the winter break. Details to follow in the next issue.' },
+  ],
+  spotlight: [
+    { title: 'Your name could be here', body: "Each issue we feature a student: their projects, interests, or something they're proud of. Nominate someone (or yourself!) for the next issue." },
+  ],
+  corner: [
+    { tag: 'Wednesdays', title: 'Volleyball Club', body: "The volleyball club meets every Wednesday and is looking for new members! Whether you're experienced or have never served a ball, come along and give it a try." },
+    { tag: 'Mondays', title: 'Badminton Club', body: 'Badminton on Mondays is a more informal session. Just drop by, grab a racket and play for fun. No experience or commitment needed.' },
+  ],
+  gossip: [
+    { title: 'The great canteen mystery', body: 'Someone keeps leaving perfectly folded paper cranes on the canteen tables every Friday. Nobody knows who. Theories welcome.' },
+    { title: 'Overheard in the corridor', body: "\"I'm not procrastinating, I'm letting my ideas marinate.\" Honestly? Relatable." },
+    { title: 'Costume rumours', body: 'Word is that at least one teacher is planning a Halloween costume this year. We\'ll be watching.' },
+  ],
+  quote: [
+    { tag: 'Senuja', body: 'Every great newsletter needs an egoistic dude who happens to work with computers.' },
+  ],
+};
+
 const $ = id => document.getElementById(id);
 const state = { section: 'feature', posts: [], editingId: null, user: null };
 let fb; // Firebase functions + instances
@@ -73,6 +105,11 @@ function wireUpUI() {
 
   $('logout-btn').addEventListener('click', () => { closeEditor(); fb.signOut(fb.auth); });
   $('new-btn').addEventListener('click', () => openEditor(null));
+  $('import-all-btn').addEventListener('click', async () => {
+    $('import-all-btn').disabled = true;
+    await importDefaults(SECTIONS.map(s => s.key));
+    $('import-all-btn').disabled = false;
+  });
   $('cancel-btn').addEventListener('click', closeEditor);
   $('post-form').addEventListener('submit', savePost);
 
@@ -179,6 +216,39 @@ async function deletePost(post) {
   } catch (err) { console.error(err); toast('Could not delete.'); }
 }
 
+// Copies the website's current text into editable posts for the given sections
+// (only sections that have no posts yet, so nothing is ever duplicated).
+async function importDefaults(keys) {
+  const empty = keys.filter(k => !state.posts.some(p => p.section === k));
+  if (!empty.length) { toast('Nothing to import: those sections already have posts.'); return; }
+  try {
+    for (const key of empty) {
+      // Add in reverse so the first item on the website ends up newest (shown first).
+      for (const item of [...DEFAULTS[key]].reverse()) {
+        await fb.addDoc(fb.collection(fb.db, 'posts'), {
+          section: key,
+          title: item.title || '',
+          tag: item.tag || '',
+          date: item.date || '',
+          body: item.body,
+          published: true,
+          createdAt: fb.serverTimestamp(),
+          updatedAt: fb.serverTimestamp(),
+          author: state.user.email,
+          updatedBy: state.user.email,
+        });
+      }
+    }
+    toast('Imported ✓ You can now edit everything.');
+  } catch (err) {
+    console.error(err);
+    toast(err.code === 'permission-denied'
+      ? 'Not allowed: this account is not on the writers list (check the Firestore rules).'
+      : 'Import failed. Try again.');
+  }
+  await loadPosts();
+}
+
 /* ---------- Rendering ---------- */
 
 const currentSection = () => SECTIONS.find(s => s.key === state.section);
@@ -202,12 +272,16 @@ function render() {
     .filter(p => p.section === s.key)
     .sort((a, b) => millis(b.createdAt) - millis(a.createdAt));
 
+  // Banner offering to import everything when the whole database is still empty.
+  $('import-banner').hidden = state.posts.length > 0;
+
   const list = $('post-list');
   list.replaceChildren();
   if (!posts.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = 'Nothing here yet, so the website shows its default text for this section. Click "+ New post" to write the first one.';
+    li.textContent = 'Nothing here yet, so the website still shows its original text for this section. ';
+    li.append(button('Make the current website text editable', 'ghost small', () => importDefaults([s.key])));
     list.append(li);
     return;
   }
