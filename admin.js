@@ -105,11 +105,6 @@ function wireUpUI() {
 
   $('logout-btn').addEventListener('click', () => { closeEditor(); fb.signOut(fb.auth); });
   $('new-btn').addEventListener('click', () => openEditor(null));
-  $('import-all-btn').addEventListener('click', async () => {
-    $('import-all-btn').disabled = true;
-    await importDefaults(SECTIONS.map(s => s.key));
-    $('import-all-btn').disabled = false;
-  });
   $('cancel-btn').addEventListener('click', closeEditor);
   $('post-form').addEventListener('submit', savePost);
 
@@ -147,6 +142,14 @@ async function loadPosts() {
   try {
     const snap = await fb.getDocs(fb.collection(fb.db, 'posts'));
     state.posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // First ever login: the database is empty, so load in what the newsletter
+    // currently shows. After this, the admin and the website always match.
+    if (!state.posts.length && !state.seeded) {
+      state.seeded = true;
+      await importDefaults(SECTIONS.map(s => s.key));
+      return; // importDefaults reloads the posts and renders
+    }
   } catch (err) {
     console.error(err);
     state.posts = [];
@@ -216,8 +219,9 @@ async function deletePost(post) {
   } catch (err) { console.error(err); toast('Could not delete.'); }
 }
 
-// Copies the website's current text into editable posts for the given sections
+// Copies the website's original text into editable posts for the given sections
 // (only sections that have no posts yet, so nothing is ever duplicated).
+// Runs automatically on the first login, when the database is still empty.
 async function importDefaults(keys) {
   const empty = keys.filter(k => !state.posts.some(p => p.section === k));
   if (!empty.length) { toast('Nothing to import: those sections already have posts.'); return; }
@@ -239,7 +243,7 @@ async function importDefaults(keys) {
         });
       }
     }
-    toast('Imported ✓ You can now edit everything.');
+    toast('Loaded the newsletter\'s current content ✓');
   } catch (err) {
     console.error(err);
     toast(err.code === 'permission-denied'
@@ -272,16 +276,12 @@ function render() {
     .filter(p => p.section === s.key)
     .sort((a, b) => millis(b.createdAt) - millis(a.createdAt));
 
-  // Banner offering to import everything when the whole database is still empty.
-  $('import-banner').hidden = state.posts.length > 0;
-
   const list = $('post-list');
   list.replaceChildren();
   if (!posts.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = 'Nothing here yet, so the website still shows its original text for this section. ';
-    li.append(button('Make the current website text editable', 'ghost small', () => importDefaults([s.key])));
+    li.textContent = 'This section is empty, so it is hidden on the website. Click "+ New post" to add something.';
     list.append(li);
     return;
   }

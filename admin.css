@@ -185,17 +185,3 @@ button:disabled { opacity: 0.6; cursor: wait; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ---------- Import banner ---------- */
-.import-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-  border: 2px solid var(--accent);
-  background: var(--accent-soft);
-}
-.import-banner h2 { font-size: 1.2rem; margin-bottom: 4px; }
-.import-banner > div { flex: 1 1 320px; }
-.posts .empty button { margin-top: 10px; display: block; font-style: normal; }
