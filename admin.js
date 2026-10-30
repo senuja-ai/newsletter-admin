@@ -150,6 +150,22 @@ async function loadPosts() {
       await importDefaults(SECTIONS.map(s => s.key));
       return; // importDefaults reloads the posts and renders
     }
+
+    // The first import was interrupted (e.g. the page was reloaded while saving):
+    // some sections are still empty and nothing new has been written since.
+    // Finish it once, so writers see everything the website shows.
+    const missing = SECTIONS.map(s => s.key).filter(k => !state.posts.some(p => p.section === k));
+    const created = state.posts.map(p => millis(p.createdAt));
+    const onlyFirstImport = Math.max(...created) - Math.min(...created) < 10 * 60 * 1000;
+    let finished = false;
+    try { finished = localStorage.getItem('norre-import-finished') === '1'; } catch (e) {}
+    if (missing.length && onlyFirstImport && !finished && !state.seeded) {
+      state.seeded = true;
+      await importDefaults(missing);
+      try { localStorage.setItem('norre-import-finished', '1'); } catch (e) {}
+      return;
+    }
+    try { localStorage.setItem('norre-import-finished', '1'); } catch (e) {}
   } catch (err) {
     console.error(err);
     state.posts = [];
@@ -248,7 +264,7 @@ async function importDefaults(keys) {
     console.error(err);
     toast(err.code === 'permission-denied'
       ? 'Not allowed: this account is not on the writers list (check the Firestore rules).'
-      : 'Import failed. Try again.');
+      : 'Loading the current content failed (' + (err.code || err.message) + '). Reload to try again.');
   }
   await loadPosts();
 }

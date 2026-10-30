@@ -17,6 +17,6 @@ export const firebaseConfig = {
   measurementId: "G-EV1PGHMTJ2"
 };
 
-// Name of the Firestore database. Normally "norre-news". If you created one with
+// Name of the Firestore database. Normally "(default)". If you created one with
 // a different Database ID, put that exact ID here instead.
 export const databaseId = "norre-news";
