@@ -10,7 +10,9 @@ service cloud.firestore {
     function isWriter() {
       return request.auth != null
         && request.auth.token.email in [
-          'senujaganganath@gmail.com'
+          'senujaganganath@gmail.com',
+          'yekta.shekari8821@gmail.com ',
+          'lenkachrenkova8@gmail.com'
         ];
     }
 
@@ -20,7 +22,7 @@ service cloud.firestore {
         && d.title is string && d.title.size() <= 200
         && d.tag is string && d.tag.size() <= 60
         && d.date is string && d.date.size() <= 10
-        && d.body is string && d.body.size() > 0 && d.body.size() <= 5000
+        && d.body is string && d.body.size() > 0 && d.body.size() <= 9000
         && d.published is bool;
     }
 

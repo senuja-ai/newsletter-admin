@@ -7,8 +7,8 @@ const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 
 // Every section of the newsletter, and which fields its posts use.
 const SECTIONS = [
-  { key: 'feature',   label: 'Top Story',      title: 'Headline', tag: null,            body: 'Story', hint: 'The website shows the newest published top story. The first paragraph is shown larger.' },
-  { key: 'news',      label: 'School News',    title: 'Headline', tag: 'Tag (e.g. Halloween)', body: 'Article', hint: 'Every published news card is shown, newest first.' },
+  { key: 'feature',   label: 'Top Story',      title: 'Headline', tag: null,            body: 'Story', maxWords: 1000, hint: 'The website shows the newest published top story. The first paragraph is shown larger. Up to 1000 words.' },
+  { key: 'news',      label: 'School News',    title: 'Headline', tag: 'Tag (e.g. Halloween)', body: 'Article', maxWords: 1000, hint: 'Every published news card is shown, newest first. Long articles show a preview with "Read more". Up to 1000 words.' },
   { key: 'events',    label: 'Events',         title: 'Event name', tag: 'Month label if no date (e.g. Dec)', body: 'Details', date: true, hint: 'Shown soonest first. Events whose date has passed are hidden automatically.' },
   { key: 'spotlight', label: 'Spotlight',      title: 'Student / headline', tag: null,  body: 'Write-up', hint: 'The website shows the newest published spotlight.' },
   { key: 'corner',    label: 'Student Corner', title: 'Headline', tag: 'Tag (e.g. Mondays)', body: 'Text', hint: 'Clubs, tips and student notices. Every published card is shown, newest first.' },
@@ -49,6 +49,18 @@ const DEFAULTS = {
 };
 
 const $ = id => document.getElementById(id);
+const DEFAULT_MAX_WORDS = 800; // other sections keep their previous limit (~5000 characters)
+const countWords = text => (text.trim().match(/\S+/g) || []).length;
+const maxWordsFor = s => s.maxWords || DEFAULT_MAX_WORDS;
+
+function updateWordCount() {
+  const s = currentSection();
+  const n = countWords($('f-body').value);
+  const max = maxWordsFor(s);
+  const c = $('f-count');
+  c.textContent = n + ' / ' + max + ' words';
+  c.classList.toggle('over', n > max);
+}
 const state = { section: 'feature', posts: [], editingId: null, user: null };
 let fb; // Firebase functions + instances
 
@@ -108,6 +120,7 @@ function wireUpUI() {
   $('new-btn').addEventListener('click', () => openEditor(null));
   $('cancel-btn').addEventListener('click', closeEditor);
   $('post-form').addEventListener('submit', savePost);
+  $('f-body').addEventListener('input', updateWordCount);
 
   // Tabs
   const tabs = $('tabs');
@@ -194,6 +207,8 @@ async function savePost(e) {
   };
   if (s.title && !data.title) { $('save-error').textContent = 'Please add a ' + s.title.toLowerCase() + '.'; return; }
   if (!data.body) { $('save-error').textContent = 'Please write some text.'; return; }
+  const words = countWords(data.body);
+  if (words > maxWordsFor(s)) { $('save-error').textContent = `Too long: ${words} words (the limit for ${s.label} is ${maxWordsFor(s)}).`; return; }
 
   $('save-btn').disabled = true;
   $('save-error').textContent = '';
@@ -363,6 +378,7 @@ function openEditor(post) {
   $('f-tag').value = post ? post.tag || '' : '';
   $('f-date').value = post ? post.date || '' : '';
   $('f-body').value = post ? post.body || '' : '';
+  updateWordCount();
   $('f-published').checked = post ? !!post.published : true;
   $('save-error').textContent = '';
 
