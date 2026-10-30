@@ -1,6 +1,6 @@
 // Nørre News writers' desk: log in, then create, edit, publish and delete posts.
 
-import { firebaseConfig } from './firebase-config.js';
+import { firebaseConfig, databaseId } from './firebase-config.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 
@@ -68,7 +68,7 @@ async function start() {
   const fsMod = await import(`${SDK}/firebase-firestore.js`);
 
   const app = appMod.initializeApp(firebaseConfig);
-  fb = { ...authMod, ...fsMod, auth: authMod.getAuth(app), db: fsMod.getFirestore(app) };
+  fb = { ...authMod, ...fsMod, auth: authMod.getAuth(app), db: fsMod.getFirestore(app, databaseId || '(default)') };
 
   wireUpUI();
 

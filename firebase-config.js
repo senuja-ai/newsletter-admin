@@ -16,3 +16,7 @@ export const firebaseConfig = {
   appId: "1:427748928236:web:7924d4c42d5b694bab53c9",
   measurementId: "G-EV1PGHMTJ2"
 };
+
+// Name of the Firestore database. Normally "norre-news". If you created one with
+// a different Database ID, put that exact ID here instead.
+export const databaseId = "norre-news";
