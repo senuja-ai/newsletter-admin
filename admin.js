@@ -1,6 +1,7 @@
 // Nørre News writers' desk: log in, then create, edit, publish and delete posts.
 
-import { firebaseConfig, databaseId } from './firebase-config.js';
+// Loaded with a fresh ?v= each time so browsers never use an old cached copy.
+const { firebaseConfig, databaseId } = await import(`./firebase-config.js?v=${Date.now()}`);
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 
