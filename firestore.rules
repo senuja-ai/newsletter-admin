@@ -11,8 +11,9 @@ service cloud.firestore {
       return request.auth != null
         && request.auth.token.email in [
           'senujaganganath@gmail.com',
-          'yekta.shekari8821@gmail.com ',
-          'lenkachrenkova8@gmail.com'
+          'yekta.shekari8821@gmail.com',
+          'lenkachrenkova8@gmail.com',
+          'febaknine@gmail.com'
         ];
     }
 
@@ -32,6 +33,39 @@ service cloud.firestore {
       // Only the writers can create, edit or delete.
       allow create, update: if isWriter() && validPost();
       allow delete: if isWriter();
+    }
+
+    // ---------- Articles (full pages with comments) ----------
+    function validArticle() {
+      let d = request.resource.data;
+      return d.title is string && d.title.size() > 0 && d.title.size() <= 200
+        && d.subtitle is string && d.subtitle.size() <= 300
+        && d.authorName is string && d.authorName.size() > 0 && d.authorName.size() <= 80
+        && d.coverUrl is string && d.coverUrl.size() <= 500
+        && d.body is string && d.body.size() > 0 && d.body.size() <= 60000
+        && d.published is bool;
+    }
+
+    match /articles/{articleId} {
+      // Anyone can read published articles; writers can also read drafts.
+      allow read: if resource.data.published == true || isWriter();
+      allow create, update: if isWriter() && validArticle();
+      allow delete: if isWriter();
+
+      match /comments/{commentId} {
+        // Anyone can read comments and add one to a published article.
+        allow read: if true;
+        allow create: if request.resource.data.keys().hasOnly(['name', 'text', 'createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 50
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 1 && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time
+          && get(/databases/$(database)/documents/articles/$(articleId)).data.published == true;
+        // Nobody can edit a comment; only writers can delete them.
+        allow update: if false;
+        allow delete: if isWriter();
+      }
     }
   }
 }

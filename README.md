@@ -29,3 +29,13 @@ public newsletter site straight away. No git push needed.
 ## Changing writers later
 Add or remove users in **Authentication → Users**, and update the email
 list in the Firestore rules.
+
+## Articles
+The **Articles** tab manages full articles (title, subtitle, author name,
+optional cover image link, and the text with simple formatting: see
+"Formatting help" in the editor). "Edit & comments" also lists the article's
+comments so you can delete unwanted ones. Deleting an article deletes its
+comments too.
+
+Articles need the `articles` part of `firestore.rules`: paste the whole file
+into Firestore → Rules and press Publish whenever the rules change.

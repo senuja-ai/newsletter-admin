@@ -66,6 +66,15 @@
           <label id="f-title-wrap"><span id="f-title-label">Headline</span>
             <input type="text" id="f-title" maxlength="200">
           </label>
+          <label id="f-subtitle-wrap" hidden>Subtitle <small>(one line under the title)</small>
+            <input type="text" id="f-subtitle" maxlength="300">
+          </label>
+          <label id="f-author-wrap" hidden>Author name <small>(shown on the article)</small>
+            <input type="text" id="f-author" maxlength="80">
+          </label>
+          <label id="f-cover-wrap" hidden>Cover image link <small>(optional, must start with https://)</small>
+            <input type="url" id="f-cover" maxlength="500" placeholder="https://…">
+          </label>
           <label id="f-tag-wrap"><span id="f-tag-label">Tag</span>
             <input type="text" id="f-tag" maxlength="60">
           </label>
@@ -76,6 +85,17 @@
             <textarea id="f-body" rows="12" maxlength="9000" required></textarea>
             <span class="counter" id="f-count"></span>
           </label>
+          <details class="format-help" id="f-help" hidden>
+            <summary>Formatting help</summary>
+            <ul>
+              <li><code>## Heading</code> and <code>### Smaller heading</code></li>
+              <li><code>**bold**</code> and <code>*italic*</code></li>
+              <li><code>&gt; A quote</code> on its own line</li>
+              <li><code>- Item</code> for bullet points</li>
+              <li><code>[link text](https://example.com)</code></li>
+              <li><code>---</code> on its own line for a divider</li>
+            </ul>
+          </details>
           <label class="check">
             <input type="checkbox" id="f-published"> Published (visible on the website)
           </label>
@@ -85,6 +105,13 @@
           </div>
           <p class="error" id="save-error" role="alert"></p>
         </form>
+
+        <!-- Comments on the article being edited -->
+        <div class="comments-admin" id="comments-admin" hidden>
+          <h3 id="comments-admin-title">Comments</h3>
+          <p class="muted">Delete anything rude, spammy or hurtful. Deleted comments disappear from the article straight away.</p>
+          <ul class="comment-list" id="comment-list"></ul>
+        </div>
       </section>
     </div>
 
@@ -102,7 +129,7 @@
       var anyVisible = ids.some(function (id) { return !document.getElementById(id).hidden; });
       if (!anyVisible) {
         var n = document.getElementById('setup-notice');
-        n.querySelector('h2').textContent = 'The writer site could not start';
+        n.querySelector('h2').textContent = 'The writer site is down rn, contact senuja ASAP!';
         n.querySelector('p').innerHTML = 'Check <code>firebase-config.js</code>: the settings line must start with <code>export const firebaseConfig = {</code>. Then push again and reload.';
         n.hidden = false;
       }

@@ -67,7 +67,7 @@ code { background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; }
 /* ---------- Forms ---------- */
 label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 14px; }
 label small { font-weight: 400; color: var(--muted); }
-input[type="text"], input[type="email"], input[type="password"], input[type="date"], textarea {
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="url"], textarea {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -189,3 +189,21 @@ button:disabled { opacity: 0.6; cursor: wait; }
 /* ---------- Word counter ---------- */
 .counter { display: block; text-align: right; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-top: 4px; }
 .counter.over { color: #b91c1c; font-weight: 600; }
+
+/* ---------- Articles ---------- */
+.tabs .tab-divider { width: 1px; background: var(--line); margin: 4px 4px; flex-shrink: 0; }
+.format-help { margin: -4px 0 14px; font-size: 0.85rem; }
+.format-help summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.format-help ul { margin: 8px 0 0 18px; color: var(--muted); display: grid; gap: 4px; }
+.post .view-link { font-size: 0.8rem; color: var(--accent); font-weight: 600; text-decoration: none; padding: 5px 4px; }
+.post .view-link:hover { text-decoration: underline; }
+
+.comments-admin { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.comments-admin h3 { font-family: 'Fraunces', Georgia, serif; font-size: 1.15rem; margin-bottom: 4px; }
+.comments-admin > .muted { margin-bottom: 12px; }
+.comment-list { list-style: none; display: grid; gap: 8px; }
+.comment-list li { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 0.9rem; }
+.comment-list .c-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.comment-list .c-when { color: var(--muted); font-size: 0.78rem; font-weight: 400; margin-left: 6px; }
+.comment-list p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.comment-list .empty { color: var(--muted); font-style: italic; border: none; padding: 0; }

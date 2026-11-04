@@ -16,6 +16,13 @@ const SECTIONS = [
   { key: 'quote',     label: 'Quote',          title: null,       tag: 'Said by',       body: 'Quote', hint: 'The website shows the newest published quote (at the bottom of Student Corner).' },
 ];
 
+// Articles live in their own collection ("articles") and get a full page with comments.
+const ARTICLES = {
+  key: 'articles', label: 'Articles', title: 'Title', body: 'Article', maxWords: 5000, article: true,
+  hint: 'Full articles with their own page and a comments section. Every published article gets a summary card in the Articles section of the newsletter, linking to its page. Up to 5000 words.',
+};
+const collectionFor = key => (key === 'articles' ? 'articles' : 'posts');
+
 // What the newsletter shows right now (the default text in newsletter/index.html).
 // "Import current content" turns these into editable, published posts.
 // Listed in the order they appear on the website.
@@ -61,7 +68,7 @@ function updateWordCount() {
   c.textContent = n + ' / ' + max + ' words';
   c.classList.toggle('over', n > max);
 }
-const state = { section: 'feature', posts: [], editingId: null, user: null };
+const state = { section: 'feature', posts: [], articles: [], editingId: null, user: null };
 let fb; // Firebase functions + instances
 
 const isConfigured = firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PASTE');
@@ -93,8 +100,10 @@ async function start() {
     if (user) {
       $('user-email').textContent = user.email;
       await loadPosts();
+      await loadArticles();
     } else {
       state.posts = [];
+      state.articles = [];
     }
   });
 }
@@ -132,6 +141,14 @@ function wireUpUI() {
     b.addEventListener('click', () => { state.section = s.key; closeEditor(); render(); });
     tabs.append(b);
   }
+  const divider = document.createElement('span');
+  divider.className = 'tab-divider';
+  const art = document.createElement('button');
+  art.type = 'button';
+  art.dataset.key = ARTICLES.key;
+  art.setAttribute('role', 'tab');
+  art.addEventListener('click', () => { state.section = ARTICLES.key; closeEditor(); render(); });
+  tabs.append(divider, art);
 }
 
 function friendlyAuthError(err) {
@@ -190,11 +207,26 @@ async function loadPosts() {
   render();
 }
 
+async function loadArticles() {
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'articles'));
+    state.articles = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error(err);
+    state.articles = [];
+    if (state.section === 'articles') toast(err.code === 'permission-denied'
+      ? 'Articles are not allowed yet: update the Firestore rules (see README).'
+      : 'Could not load articles.');
+  }
+  render();
+}
+
 const millis = ts => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Date.now());
 
 async function savePost(e) {
   e.preventDefault();
   const s = currentSection();
+  if (s.article) return saveArticle();
   const data = {
     section: s.key,
     title: s.title ? $('f-title').value.trim() : '',
@@ -231,23 +263,71 @@ async function savePost(e) {
   }
 }
 
-async function togglePublished(post) {
+async function saveArticle() {
+  const data = {
+    title: $('f-title').value.trim(),
+    subtitle: $('f-subtitle').value.trim(),
+    authorName: $('f-author').value.trim(),
+    coverUrl: $('f-cover').value.trim(),
+    body: $('f-body').value.trim(),
+    published: $('f-published').checked,
+    updatedAt: fb.serverTimestamp(),
+    updatedBy: state.user.email,
+  };
+  const err = m => { $('save-error').textContent = m; };
+  if (!data.title) return err('Please add a title.');
+  if (!data.authorName) return err('Please add the author\'s name.');
+  if (data.coverUrl && !/^https:\/\//i.test(data.coverUrl)) return err('The cover image link must start with https://');
+  if (!data.body) return err('Please write the article.');
+  const words = countWords(data.body);
+  if (words > ARTICLES.maxWords) return err(`Too long: ${words} words (the limit for articles is ${ARTICLES.maxWords}).`);
+  try { localStorage.setItem('norre-author-name', data.authorName); } catch (e) {}
+
+  $('save-btn').disabled = true;
+  err('');
   try {
-    await fb.updateDoc(fb.doc(fb.db, 'posts', post.id), {
+    if (state.editingId) {
+      await fb.updateDoc(fb.doc(fb.db, 'articles', state.editingId), data);
+    } else {
+      await fb.addDoc(fb.collection(fb.db, 'articles'), { ...data, createdAt: fb.serverTimestamp(), author: state.user.email });
+    }
+    toast(data.published ? 'Article saved and published ✓' : 'Article saved as draft ✓');
+    closeEditor();
+    await loadArticles();
+  } catch (e) {
+    console.error(e);
+    err(e.code === 'permission-denied'
+      ? 'Not allowed: update the Firestore rules for articles (see README), or check this account is a writer.'
+      : 'Could not save. Try again.');
+  } finally {
+    $('save-btn').disabled = false;
+  }
+}
+
+async function togglePublished(post) {
+  const col = collectionFor(state.section);
+  try {
+    await fb.updateDoc(fb.doc(fb.db, col, post.id), {
       published: !post.published, updatedAt: fb.serverTimestamp(), updatedBy: state.user.email,
     });
     toast(post.published ? 'Unpublished (now a draft)' : 'Published ✓');
-    await loadPosts();
+    if (col === 'articles') await loadArticles(); else await loadPosts();
   } catch (err) { console.error(err); toast('Could not update.'); }
 }
 
 async function deletePost(post) {
   if (!confirm(`Delete "${post.title || post.body.slice(0, 40)}"? This can't be undone.`)) return;
+  const col = collectionFor(state.section);
   try {
-    await fb.deleteDoc(fb.doc(fb.db, 'posts', post.id));
+    if (col === 'articles') {
+      // Remove the article's comments too, so nothing is left behind.
+      const cs = await fb.getDocs(fb.collection(fb.db, 'articles', post.id, 'comments'));
+      for (const c of cs.docs) await fb.deleteDoc(c.ref);
+    }
+    await fb.deleteDoc(fb.doc(fb.db, col, post.id));
     if (state.editingId === post.id) closeEditor();
     toast('Deleted');
-    await loadPosts();
+    if (col === 'articles') await loadArticles(); else await loadPosts();
   } catch (err) { console.error(err); toast('Could not delete.'); }
 }
 
@@ -287,15 +367,16 @@ async function importDefaults(keys) {
 
 /* ---------- Rendering ---------- */
 
-const currentSection = () => SECTIONS.find(s => s.key === state.section);
+const currentSection = () => (state.section === ARTICLES.key ? ARTICLES : SECTIONS.find(s => s.key === state.section));
 
 function render() {
   const s = currentSection();
 
   // tabs
   for (const b of $('tabs').children) {
-    const n = state.posts.filter(p => p.section === b.dataset.key).length;
-    const sec = SECTIONS.find(x => x.key === b.dataset.key);
+    if (!b.dataset.key) continue; // divider
+    const n = b.dataset.key === ARTICLES.key ? state.articles.length : state.posts.filter(p => p.section === b.dataset.key).length;
+    const sec = b.dataset.key === ARTICLES.key ? ARTICLES : SECTIONS.find(x => x.key === b.dataset.key);
     b.textContent = sec.label;
     if (n) { const c = document.createElement('span'); c.className = 'count'; c.textContent = n; b.append(c); }
     b.setAttribute('aria-selected', String(b.dataset.key === s.key));
@@ -303,6 +384,8 @@ function render() {
 
   $('section-title').textContent = s.label;
   $('section-hint').textContent = s.hint;
+  $('new-btn').textContent = s.article ? '+ New article' : '+ New post';
+  if (s.article) return renderArticleList();
 
   const posts = state.posts
     .filter(p => p.section === s.key)
@@ -353,6 +436,106 @@ function render() {
   }
 }
 
+function renderArticleList() {
+  const list = $('post-list');
+  list.replaceChildren();
+  const articles = [...state.articles].sort((a, b) => millis(b.createdAt) - millis(a.createdAt));
+  if (!articles.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No articles yet, so the Articles section is hidden on the website. Click "+ New article" to write the first one.';
+    list.append(li);
+    return;
+  }
+  const site = $('site-link').href.replace(/[^/]*$/, '');
+  for (const a of articles) {
+    const li = document.createElement('li');
+    li.className = 'post' + (a.id === state.editingId ? ' editing' : '');
+    const top = document.createElement('div');
+    top.className = 'post-top';
+    const h = document.createElement('h3');
+    h.textContent = a.title || '(untitled)';
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (a.published ? 'live' : 'draft');
+    badge.textContent = a.published ? 'Live' : 'Draft';
+    top.append(h, badge);
+    const ex = document.createElement('p');
+    ex.className = 'excerpt';
+    ex.textContent = a.subtitle || a.body;
+    const meta = document.createElement('p');
+    meta.className = 'meta';
+    const when = a.updatedAt && a.updatedAt.toDate ? a.updatedAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : 'just now';
+    meta.textContent = ['By ' + (a.authorName || '?'), countWords(a.body || '') + ' words', 'Last edited ' + when + ' by ' + (a.updatedBy || a.author || '?')].join(' · ');
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.append(
+      button('Edit & comments', 'ghost small', () => openEditor(a)),
+      button(a.published ? 'Unpublish' : 'Publish', 'ghost small', () => togglePublished(a)),
+      button('Delete', 'danger small', () => deletePost(a)),
+    );
+    if (a.published) {
+      const view = document.createElement('a');
+      view.className = 'view-link';
+      view.href = site + 'article.html?id=' + encodeURIComponent(a.id);
+      view.target = '_blank';
+      view.rel = 'noopener';
+      view.textContent = 'View ↗';
+      actions.append(view);
+    }
+    li.append(top, ex, meta, actions);
+    list.append(li);
+  }
+}
+
+/* ---------- Comment moderation ---------- */
+
+async function loadComments(articleId) {
+  const box = $('comments-admin');
+  const list = $('comment-list');
+  box.hidden = false;
+  list.replaceChildren();
+  $('comments-admin-title').textContent = 'Comments';
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'articles', articleId, 'comments'));
+    if (state.editingId !== articleId) return; // editor moved on
+    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => millis(b.createdAt) - millis(a.createdAt));
+    $('comments-admin-title').textContent = comments.length + (comments.length === 1 ? ' comment' : ' comments');
+    if (!comments.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'No comments yet.';
+      list.append(li);
+      return;
+    }
+    for (const c of comments) {
+      const li = document.createElement('li');
+      const top = document.createElement('div');
+      top.className = 'c-top';
+      const who = document.createElement('strong');
+      who.textContent = c.name || 'Anonymous';
+      const when = document.createElement('span');
+      when.className = 'c-when';
+      when.textContent = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+      who.append(when);
+      top.append(who, button('Delete', 'danger small', async () => {
+        if (!confirm('Delete this comment by ' + (c.name || 'Anonymous') + '?')) return;
+        try {
+          await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', c.id));
+          toast('Comment deleted');
+          loadComments(articleId);
+        } catch (e) { console.error(e); toast('Could not delete the comment.'); }
+      }));
+      const p = document.createElement('p');
+      p.textContent = c.text || '';
+      li.append(top, p);
+      list.append(li);
+    }
+  } catch (e) {
+    console.error(e);
+    $('comments-admin-title').textContent = 'Comments could not be loaded';
+  }
+}
+
 function button(text, cls, onClick) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -366,10 +549,20 @@ function openEditor(post) {
   const s = currentSection();
   state.editingId = post ? post.id : null;
 
-  $('editor-title').textContent = (post ? 'Edit · ' : 'New · ') + s.label;
+  $('editor-title').textContent = (post ? 'Edit · ' : 'New · ') + (s.article ? 'Article' : s.label);
   $('f-title-wrap').hidden = !s.title;
   $('f-tag-wrap').hidden = !s.tag;
   $('f-date-wrap').hidden = !s.date;
+  for (const id of ['f-subtitle-wrap', 'f-author-wrap', 'f-cover-wrap', 'f-help']) $(id).hidden = !s.article;
+  $('f-body').maxLength = s.article ? 60000 : 9000;
+  $('f-body').rows = s.article ? 20 : 12;
+  let lastAuthor = '';
+  try { lastAuthor = localStorage.getItem('norre-author-name') || ''; } catch (e) {}
+  $('f-subtitle').value = post ? post.subtitle || '' : '';
+  $('f-author').value = post ? post.authorName || '' : lastAuthor;
+  $('f-cover').value = post ? post.coverUrl || '' : '';
+  $('comments-admin').hidden = true;
+  if (s.article && post) loadComments(post.id);
   if (s.title) $('f-title-label').textContent = s.title;
   if (s.tag) $('f-tag-label').textContent = s.tag;
   $('f-body-label').textContent = s.body;
@@ -391,6 +584,7 @@ function openEditor(post) {
 function closeEditor() {
   state.editingId = null;
   $('editor').hidden = true;
+  $('comments-admin').hidden = true;
   $('post-form').reset();
   if (state.user) render();
 }
