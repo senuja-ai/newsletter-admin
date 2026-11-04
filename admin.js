@@ -18,8 +18,8 @@ const SECTIONS = [
 
 // Articles live in their own collection ("articles") and get a full page with comments.
 const ARTICLES = {
-  key: 'articles', label: 'Articles', title: 'Title', body: 'Article', maxWords: 5000, article: true,
-  hint: 'Full articles with their own page and a comments section. Every published article gets a summary card in the Articles section of the newsletter, linking to its page. Up to 5000 words.',
+  key: 'articles', label: 'Articles', title: 'Title', body: 'Article', maxWords: 100000, article: true,
+  hint: 'Full articles with their own page and a comments section. Every published article gets a summary card in the Articles section of the newsletter, linking to its page. Up to 100,000 words, with images.',
 };
 const collectionFor = key => (key === 'articles' ? 'articles' : 'posts');
 
@@ -130,6 +130,22 @@ function wireUpUI() {
   $('cancel-btn').addEventListener('click', closeEditor);
   $('post-form').addEventListener('submit', savePost);
   $('f-body').addEventListener('input', updateWordCount);
+
+  // ---- Images in articles ----
+  $('img-upload-btn').addEventListener('click', () => $('img-file').click());
+  $('img-file').addEventListener('change', () => { uploadImages([...$('img-file').files]); $('img-file').value = ''; });
+  $('img-link-btn').addEventListener('click', () => insertAtCursor('![Caption](https://)', 11, 'https://'));
+  $('f-body').addEventListener('paste', e => {
+    if (!currentSection().article) return;
+    const files = [...(e.clipboardData && e.clipboardData.files || [])].filter(f => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); uploadImages(files); }
+  });
+  $('f-body').addEventListener('dragover', e => { if (currentSection().article) e.preventDefault(); });
+  $('f-body').addEventListener('drop', e => {
+    if (!currentSection().article) return;
+    const files = [...(e.dataTransfer && e.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); uploadImages(files); }
+  });
 
   // Tabs
   const tabs = $('tabs');
@@ -289,7 +305,9 @@ async function saveArticle() {
     if (state.editingId) {
       await fb.updateDoc(fb.doc(fb.db, 'articles', state.editingId), data);
     } else {
-      await fb.addDoc(fb.collection(fb.db, 'articles'), { ...data, createdAt: fb.serverTimestamp(), author: state.user.email });
+      // New articles use the ID reserved when the editor opened, so uploaded images stay attached.
+      await fb.setDoc(fb.doc(fb.db, 'articles', state.draftId), { ...data, createdAt: fb.serverTimestamp(), author: state.user.email });
+      state.uploaded = []; // saved: keep the images
     }
     toast(data.published ? 'Article saved and published ✓' : 'Article saved as draft ✓');
     closeEditor();
@@ -321,8 +339,11 @@ async function deletePost(post) {
   try {
     if (col === 'articles') {
       // Remove the article's comments too, so nothing is left behind.
-      const cs = await fb.getDocs(fb.collection(fb.db, 'articles', post.id, 'comments'));
-      for (const c of cs.docs) await fb.deleteDoc(c.ref);
+      // Remove the article's comments and images too, so nothing is left behind.
+      for (const sub of ['comments', 'images']) {
+        const cs = await fb.getDocs(fb.collection(fb.db, 'articles', post.id, sub));
+        for (const c of cs.docs) await fb.deleteDoc(c.ref);
+      }
     }
     await fb.deleteDoc(fb.doc(fb.db, col, post.id));
     if (state.editingId === post.id) closeEditor();
@@ -487,6 +508,126 @@ function renderArticleList() {
   }
 }
 
+/* ---------- Images ---------- */
+
+// Images are stored in Firestore (free) next to the article, so they are
+// shrunk first: at most 1600 px wide/high and under ~700 KB each.
+const MAX_IMAGE_SIDE = 1600;
+const MAX_IMAGE_CHARS = 700000;
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+function loadImg(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Not an image the browser can read'));
+    img.src = src;
+  });
+}
+
+async function compressImage(file) {
+  const original = await readAsDataUrl(file);
+  // Small GIFs stay as they are, so animations keep working.
+  if (file.type === 'image/gif' && original.length <= MAX_IMAGE_CHARS) return { data: original, type: 'image/gif' };
+  const img = await loadImg(original);
+  let side = MAX_IMAGE_SIDE;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    const quality = Math.max(0.5, 0.85 - attempt * 0.07);
+    let data = canvas.toDataURL('image/webp', quality);
+    let type = 'image/webp';
+    if (!data.startsWith('data:image/webp')) { data = canvas.toDataURL('image/jpeg', quality); type = 'image/jpeg'; }
+    if (data.length <= MAX_IMAGE_CHARS) return { data, type };
+    side = Math.round(side * 0.8);
+  }
+  throw new Error('This image is too large even after shrinking it.');
+}
+
+async function uploadImages(files) {
+  if (!files.length) return;
+  const status = $('img-status');
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    status.textContent = `Uploading image ${i + 1} of ${files.length}…`;
+    try {
+      const { data, type } = await compressImage(file);
+      const ref = await fb.addDoc(fb.collection(fb.db, 'articles', state.draftId, 'images'), {
+        data, type, name: String(file.name || 'image').slice(0, 120), createdAt: fb.serverTimestamp(),
+      });
+      if (!state.editingId) state.uploaded.push(ref.id);
+      insertAtCursor(`![Caption](img:${ref.id})`, 2, 'Caption');
+      addImageThumb(ref.id, data);
+    } catch (err) {
+      console.error(err);
+      status.textContent = err.code === 'permission-denied'
+        ? 'Images are not allowed yet: publish the new Firestore rules (see README).'
+        : 'Could not add "' + (file.name || 'image') + '": ' + err.message;
+      return;
+    }
+  }
+  status.textContent = files.length === 1 ? 'Image added ✓ Type a caption in place of "Caption".' : files.length + ' images added ✓';
+}
+
+// Puts text at the cursor on its own line and selects part of it (e.g. "Caption") for typing over.
+function insertAtCursor(text, selectFrom, selectWord) {
+  const ta = $('f-body');
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? start;
+  const before = ta.value.slice(0, start);
+  const after = ta.value.slice(end);
+  const pre = before && !before.endsWith('\n') ? '\n' : '';
+  const post = after.startsWith('\n') ? '' : '\n';
+  ta.value = before + pre + text + post + after;
+  const s0 = before.length + pre.length + selectFrom;
+  ta.focus();
+  ta.setSelectionRange(s0, s0 + selectWord.length);
+  updateWordCount();
+}
+
+async function loadImageList() {
+  const articleId = state.draftId;
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'articles', articleId, 'images'));
+    if (state.draftId !== articleId) return;
+    $('image-list').replaceChildren();
+    snap.forEach(d => addImageThumb(d.id, d.data().data));
+  } catch (err) { console.error(err); }
+}
+
+function addImageThumb(id, data) {
+  const li = document.createElement('li');
+  const img = document.createElement('img');
+  img.src = data;
+  img.alt = '';
+  const used = () => $('f-body').value.includes('(img:' + id + ')');
+  const ins = button('Insert', 'ghost small', () => insertAtCursor(`![Caption](img:${id})`, 2, 'Caption'));
+  const del = button('Delete', 'danger small', async () => {
+    if (!confirm(used() ? 'This image is used in the article. Delete it and remove it from the text?' : 'Delete this image?')) return;
+    try {
+      await fb.deleteDoc(fb.doc(fb.db, 'articles', state.draftId, 'images', id));
+      const ta = $('f-body');
+      ta.value = ta.value.replace(new RegExp('^!\\[[^\\]]*\\]\\(img:' + id + '\\)\\n?', 'gm'), '');
+      updateWordCount();
+      li.remove();
+      state.uploaded = (state.uploaded || []).filter(x => x !== id);
+    } catch (err) { console.error(err); toast('Could not delete the image.'); }
+  });
+  li.append(img, ins, del);
+  $('image-list').append(li);
+}
+
 /* ---------- Comment moderation ---------- */
 
 async function loadComments(articleId) {
@@ -548,13 +689,19 @@ function button(text, cls, onClick) {
 function openEditor(post) {
   const s = currentSection();
   state.editingId = post ? post.id : null;
+  // Articles get their ID straight away, so images can be uploaded before the first save.
+  state.draftId = s.article ? (post ? post.id : fb.doc(fb.collection(fb.db, 'articles')).id) : null;
+  state.uploaded = [];
 
   $('editor-title').textContent = (post ? 'Edit · ' : 'New · ') + (s.article ? 'Article' : s.label);
   $('f-title-wrap').hidden = !s.title;
   $('f-tag-wrap').hidden = !s.tag;
   $('f-date-wrap').hidden = !s.date;
-  for (const id of ['f-subtitle-wrap', 'f-author-wrap', 'f-cover-wrap', 'f-help']) $(id).hidden = !s.article;
-  $('f-body').maxLength = s.article ? 60000 : 9000;
+  for (const id of ['f-subtitle-wrap', 'f-author-wrap', 'f-cover-wrap', 'f-help', 'f-images']) $(id).hidden = !s.article;
+  $('f-body').maxLength = s.article ? 900000 : 9000;
+  $('img-status').textContent = '';
+  $('image-list').replaceChildren();
+  if (s.article && post) loadImageList();
   $('f-body').rows = s.article ? 20 : 12;
   let lastAuthor = '';
   try { lastAuthor = localStorage.getItem('norre-author-name') || ''; } catch (e) {}
@@ -582,6 +729,13 @@ function openEditor(post) {
 }
 
 function closeEditor() {
+  // A new article that was never saved: remove the images uploaded for it.
+  if (!state.editingId && state.draftId && state.uploaded && state.uploaded.length) {
+    const draft = state.draftId;
+    for (const id of state.uploaded) fb.deleteDoc(fb.doc(fb.db, 'articles', draft, 'images', id)).catch(() => {});
+  }
+  state.uploaded = [];
+  state.draftId = null;
   state.editingId = null;
   $('editor').hidden = true;
   $('comments-admin').hidden = true;

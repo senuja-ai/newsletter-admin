@@ -85,6 +85,16 @@
             <textarea id="f-body" rows="12" maxlength="9000" required></textarea>
             <span class="counter" id="f-count"></span>
           </label>
+          <div class="image-tools" id="f-images" hidden>
+            <div class="actions">
+              <button type="button" class="ghost small" id="img-upload-btn">+ Image from computer</button>
+              <button type="button" class="ghost small" id="img-link-btn">+ Image link</button>
+              <input type="file" id="img-file" accept="image/*" multiple hidden>
+            </div>
+            <small class="muted">Tip: you can also paste (Ctrl + V) or drag pictures and diagrams straight into the article text.</small>
+            <p class="img-status" id="img-status" role="status"></p>
+            <ul class="image-list" id="image-list"></ul>
+          </div>
           <details class="format-help" id="f-help" hidden>
             <summary>Formatting help</summary>
             <ul>
@@ -94,6 +104,8 @@
               <li><code>- Item</code> for bullet points</li>
               <li><code>[link text](https://example.com)</code></li>
               <li><code>---</code> on its own line for a divider</li>
+              <li><code>![Caption](img:…)</code> an uploaded image (added for you by the image buttons). Change "Caption" to describe it, or delete the caption text to show none.</li>
+              <li><code>![Caption](https://…)</code> an image from another website</li>
             </ul>
           </details>
           <label class="check">

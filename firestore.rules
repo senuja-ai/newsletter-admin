@@ -42,7 +42,7 @@ service cloud.firestore {
         && d.subtitle is string && d.subtitle.size() <= 300
         && d.authorName is string && d.authorName.size() > 0 && d.authorName.size() <= 80
         && d.coverUrl is string && d.coverUrl.size() <= 500
-        && d.body is string && d.body.size() > 0 && d.body.size() <= 60000
+        && d.body is string && d.body.size() > 0 && d.body.size() <= 900000
         && d.published is bool;
     }
 
@@ -63,6 +63,18 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time
           && get(/databases/$(database)/documents/articles/$(articleId)).data.published == true;
         // Nobody can edit a comment; only writers can delete them.
+        allow update: if false;
+        allow delete: if isWriter();
+      }
+
+      // Pictures uploaded on the Writers' Desk (stored as compressed image data).
+      match /images/{imageId} {
+        allow read: if isWriter()
+          || get(/databases/$(database)/documents/articles/$(articleId)).data.published == true;
+        allow create: if isWriter()
+          && request.resource.data.type in ['image/webp', 'image/jpeg', 'image/png', 'image/gif']
+          && request.resource.data.data is string
+          && request.resource.data.data.size() < 1000000;
         allow update: if false;
         allow delete: if isWriter();
       }

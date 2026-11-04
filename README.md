@@ -42,3 +42,12 @@ Articles need the `articles` part of `firestore.rules`: paste the whole file
 into Firestore → Rules and press Publish whenever the rules change.
 =======
 >>>>>>> b6ae70f31a090ee2c8bab831b0da0341d18e5c1f
+
+### Images and diagrams
+Articles can be up to 100,000 words. In the article editor use
+**+ Image from computer** (or paste / drag a picture into the text) and
+**+ Image link** for pictures hosted elsewhere. Each image becomes a line like
+`![Caption](img:…)`: replace "Caption" with your own text. Uploaded images are
+shrunk (max 1600 px, under ~700 KB) and stored with the article in Firestore,
+because Firebase Storage is no longer free. Images need the `images` part of
+`firestore.rules`.

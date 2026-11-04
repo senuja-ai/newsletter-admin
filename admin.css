@@ -207,3 +207,15 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .comment-list .c-when { color: var(--muted); font-size: 0.78rem; font-weight: 400; margin-left: 6px; }
 .comment-list p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
 .comment-list .empty { color: var(--muted); font-style: italic; border: none; padding: 0; }
+
+/* ---------- Image tools ---------- */
+.image-tools { margin: -4px 0 14px; display: grid; gap: 6px; }
+.image-tools .actions { gap: 8px; }
+.img-status { font-size: 0.85rem; font-weight: 600; color: var(--accent); min-height: 1em; }
+.image-list { list-style: none; display: flex; flex-wrap: wrap; gap: 10px; }
+.image-list li {
+  width: 120px; border: 1px solid var(--line); border-radius: 6px; padding: 6px;
+  display: grid; gap: 4px; background: var(--paper);
+}
+.image-list img { width: 100%; height: 72px; object-fit: cover; border-radius: 4px; background: var(--card); }
+.image-list button { padding: 3px 8px; font-size: 0.75rem; }
