@@ -4,6 +4,7 @@ The login site where the two writers write and publish sections of
 Nørre News. Posts are stored in Firebase (Firestore) and appear on the
 public newsletter site straight away. No git push needed.
 
+<<<<<<< HEAD
 ## Files
 - `index.html`, `admin.css`, `admin.js`: the writer site
 - `firebase-config.js`: your Firebase settings (same as in the newsletter folder)
@@ -39,3 +40,5 @@ comments too.
 
 Articles need the `articles` part of `firestore.rules`: paste the whole file
 into Firestore → Rules and press Publish whenever the rules change.
+=======
+>>>>>>> b6ae70f31a090ee2c8bab831b0da0341d18e5c1f
