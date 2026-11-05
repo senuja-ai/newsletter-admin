@@ -237,3 +237,7 @@ button:disabled { opacity: 0.6; cursor: wait; }
 .viewer-body figure { margin: 12px 0; }
 .viewer-body img { max-width: 100%; border-radius: 4px; display: block; }
 .viewer-body figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 4px; }
+
+/* ---------- Removal requests ---------- */
+.excerpt.quoted { border-left: 3px solid var(--line); padding-left: 10px; font-style: italic; -webkit-line-clamp: 4; }
+.comment-list .badges { align-items: center; }

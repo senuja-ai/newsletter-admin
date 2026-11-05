@@ -13,7 +13,7 @@ const SECTIONS = [
   { key: 'spotlight', label: 'Spotlight',      title: 'Student / headline', tag: null,  body: 'Write-up', hint: 'The website shows the newest published spotlight.' },
   { key: 'corner',    label: 'Student Corner', title: 'Headline', tag: 'Tag (e.g. Mondays)', body: 'Text', hint: 'Clubs, tips and student notices. Every published card is shown, newest first.' },
   { key: 'gossip',    label: 'Gossip',         title: 'Headline', tag: null,            body: 'The gossip', hint: 'Keep it light and kind: no real names without the person\'s OK. Every published item is shown, newest first.' },
-  { key: 'quote',     label: 'Quote',          title: null,       tag: 'Said by',       body: 'Quote', hint: 'The website shows the newest published quote (at the bottom of Student Corner).' },
+  { key: 'quote',     label: 'Quote',          title: null,       tag: 'Said by',       body: 'Quote', hint: 'Every published quote is shown at the bottom of Student Corner, newest first. Unpublish a quote to hide it without deleting it.' },
 ];
 
 // Articles live in their own collection ("articles") and get a full page with comments.
@@ -21,6 +21,18 @@ const ARTICLES = {
   key: 'articles', label: 'Articles', title: 'Title', body: 'Article', maxWords: 100000, article: true,
   hint: 'Full articles with their own page and a comments section. Every published article gets a summary card in the Articles section of the newsletter, linking to its page. Up to 100,000 words, with images.',
 };
+// The super-admin (chief editor): the only one who can delete comments, approve
+// other writers' removal requests and read the Letterbox. The Firestore rules
+// enforce the same thing, so hiding buttons here is just for convenience.
+const SUPER_ADMIN = 'senujaganganath@gmail.com';
+const isSuper = () => !!(state.user && String(state.user.email || '').toLowerCase() === SUPER_ADMIN);
+
+// Comment removal requests from other writers, approved or rejected by the super-admin.
+const REQUESTS = {
+  key: 'requests', label: 'Removal requests', requests: true,
+  hint: 'Other writers can only ask for a comment to be removed. Approve to delete the comment (and its replies), or keep it.',
+};
+
 // Reports and article submissions sent in through the newsletter's Letterbox page.
 const LETTERBOX = {
   key: 'letterbox', label: 'Letterbox', letterbox: true,
@@ -74,7 +86,7 @@ function updateWordCount() {
   c.textContent = n + ' / ' + max + ' words';
   c.classList.toggle('over', n > max);
 }
-const state = { section: 'feature', posts: [], articles: [], submissions: [], viewingId: null, editingId: null, user: null };
+const state = { section: 'feature', posts: [], articles: [], submissions: [], requests: [], viewingId: null, editingId: null, user: null };
 let fb; // Firebase functions + instances
 
 const isConfigured = firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PASTE');
@@ -104,11 +116,19 @@ async function start() {
     $('dashboard').hidden = !user;
     $('user-box').hidden = !user;
     if (user) {
-      $('user-email').textContent = user.email;
+      $('user-email').textContent = user.email + (isSuper() ? ' (chief editor)' : '');
+      // Only the super-admin sees the Letterbox and the removal-request queue.
+      for (const k of [LETTERBOX.key, REQUESTS.key]) {
+        const tab = document.querySelector(`#tabs button[data-key="${k}"]`);
+        if (tab) tab.hidden = !isSuper();
+      }
+      if (!isSuper() && (state.section === LETTERBOX.key || state.section === REQUESTS.key)) state.section = 'feature';
       await loadPosts();
       await loadArticles();
-      await loadSubmissions();
+      await loadRequests();
+      if (isSuper()) await loadSubmissions();
     } else {
+      state.requests = [];
       state.posts = [];
       state.articles = [];
       state.submissions = [];
@@ -177,7 +197,14 @@ function wireUpUI() {
   lb.dataset.key = LETTERBOX.key;
   lb.setAttribute('role', 'tab');
   lb.addEventListener('click', () => { state.section = LETTERBOX.key; closeEditor(); render(); });
-  tabs.append(divider, art, lb);
+  const rq = document.createElement('button');
+  rq.type = 'button';
+  rq.dataset.key = REQUESTS.key;
+  rq.setAttribute('role', 'tab');
+  rq.hidden = true;
+  lb.hidden = true;
+  rq.addEventListener('click', () => { state.section = REQUESTS.key; closeEditor(); render(); });
+  tabs.append(divider, art, lb, rq);
 }
 
 function friendlyAuthError(err) {
@@ -347,8 +374,18 @@ async function togglePublished(post) {
 }
 
 async function deletePost(post) {
-  if (!confirm(`Delete "${post.title || post.body.slice(0, 40)}"? This can't be undone.`)) return;
   const col = collectionFor(state.section);
+  if (col === 'articles' && !isSuper()) {
+    // Deleting an article would also remove its comments, which only the chief editor may do.
+    try {
+      const cs = await fb.getDocs(fb.collection(fb.db, 'articles', post.id, 'comments'));
+      if (cs.size || cs.docs.length) {
+        toast('This article has comments, so only the chief editor can delete it. You can unpublish it instead.');
+        return;
+      }
+    } catch (e) { console.error(e); }
+  }
+  if (!confirm(`Delete "${post.title || post.body.slice(0, 40)}"? This can't be undone.`)) return;
   try {
     if (col === 'articles') {
       // Remove the article's comments too, so nothing is left behind.
@@ -401,7 +438,7 @@ async function importDefaults(keys) {
 
 /* ---------- Rendering ---------- */
 
-const currentSection = () => (state.section === ARTICLES.key ? ARTICLES : state.section === LETTERBOX.key ? LETTERBOX : SECTIONS.find(s => s.key === state.section));
+const currentSection = () => (state.section === ARTICLES.key ? ARTICLES : state.section === LETTERBOX.key ? LETTERBOX : state.section === REQUESTS.key ? REQUESTS : SECTIONS.find(s => s.key === state.section));
 
 function render() {
   const s = currentSection();
@@ -412,8 +449,9 @@ function render() {
     const k = b.dataset.key;
     const n = k === ARTICLES.key ? state.articles.length
       : k === LETTERBOX.key ? state.submissions.filter(x => x.status === 'new').length
+      : k === REQUESTS.key ? state.requests.length
       : state.posts.filter(p => p.section === k).length;
-    const sec = k === ARTICLES.key ? ARTICLES : k === LETTERBOX.key ? LETTERBOX : SECTIONS.find(x => x.key === k);
+    const sec = k === ARTICLES.key ? ARTICLES : k === LETTERBOX.key ? LETTERBOX : k === REQUESTS.key ? REQUESTS : SECTIONS.find(x => x.key === k);
     b.textContent = sec.label;
     if (n) { const c = document.createElement('span'); c.className = 'count'; c.textContent = n; b.append(c); }
     b.setAttribute('aria-selected', String(b.dataset.key === s.key));
@@ -422,8 +460,9 @@ function render() {
   $('section-title').textContent = s.label;
   $('section-hint').textContent = s.hint;
   $('new-btn').textContent = s.article ? '+ New article' : '+ New post';
-  $('new-btn').hidden = !!s.letterbox;
+  $('new-btn').hidden = !!(s.letterbox || s.requests);
   if (s.letterbox) return renderLetterbox();
+  if (s.requests) { $('viewer').hidden = true; return renderRequests(); }
   $('viewer').hidden = true;
   if (s.article) return renderArticleList();
 
@@ -677,16 +716,26 @@ async function loadComments(articleId) {
       when.className = 'c-when';
       when.textContent = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
       who.append(when);
-      top.append(who, button('Delete', 'danger small', async () => {
-        const replies = comments.filter(r => r.parentId === c.id);
-        if (!confirm('Delete this comment by ' + (c.name || 'Anonymous') + (replies.length ? ` and its ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : '') + '?')) return;
-        try {
-          for (const r of replies) await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', r.id));
-          await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', c.id));
-          toast('Comment deleted');
-          loadComments(articleId);
-        } catch (e) { console.error(e); toast('Could not delete the comment.'); }
-      }));
+      const pending = state.requests.find(r => r.articleId === articleId && r.commentId === c.id);
+      if (isSuper()) {
+        top.append(who, button('Delete', 'danger small', async () => {
+          if (await deleteCommentThread(articleId, c.id, c.name)) loadComments(articleId);
+        }));
+      } else if (pending) {
+        const tag = document.createElement('span');
+        tag.className = 'badge draft';
+        tag.textContent = 'Removal requested';
+        const box = document.createElement('span');
+        box.className = 'badges';
+        box.append(tag);
+        if (pending.requestedBy === state.user.email) box.append(button('Cancel request', 'ghost small', async () => {
+          try { await fb.deleteDoc(fb.doc(fb.db, 'removalRequests', pending.id)); toast('Request cancelled'); await loadRequests(); loadComments(articleId); }
+          catch (e) { console.error(e); toast('Could not cancel the request.'); }
+        }));
+        top.append(who, box);
+      } else {
+        top.append(who, button('Request removal', 'danger small', () => requestRemoval(articleId, c)));
+      }
       const p = document.createElement('p');
       p.textContent = c.text || '';
       li.append(top, p);
@@ -695,6 +744,118 @@ async function loadComments(articleId) {
   } catch (e) {
     console.error(e);
     $('comments-admin-title').textContent = 'Comments could not be loaded';
+  }
+}
+
+/* ---------- Comment removal: requests (writers) and approvals (chief editor) ---------- */
+
+async function loadRequests() {
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'removalRequests'));
+    state.requests = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error(err);
+    state.requests = [];
+  }
+  render();
+}
+
+async function requestRemoval(articleId, c) {
+  const reason = prompt('Why should this comment by ' + (c.name || 'Anonymous') + ' be removed? (optional)\n\nThe chief editor will decide.', '');
+  if (reason === null) return; // cancelled
+  const article = state.articles.find(a => a.id === articleId);
+  try {
+    await fb.addDoc(fb.collection(fb.db, 'removalRequests'), {
+      articleId,
+      articleTitle: String(article ? article.title : '').slice(0, 200),
+      commentId: c.id,
+      commentName: String(c.name || 'Anonymous').slice(0, 50),
+      commentText: String(c.text || '').slice(0, 2000),
+      reason: String(reason).trim().slice(0, 300),
+      requestedBy: state.user.email,
+      createdAt: fb.serverTimestamp(),
+    });
+    toast('Removal requested ✓ The chief editor will decide.');
+    await loadRequests();
+    loadComments(articleId);
+  } catch (err) {
+    console.error(err);
+    toast(err.code === 'permission-denied' ? 'Not allowed: publish the new Firestore rules.' : 'Could not send the request.');
+  }
+}
+
+// Chief editor only: deletes a comment, its replies and any removal requests for them.
+async function deleteCommentThread(articleId, commentId, name, skipConfirm) {
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'articles', articleId, 'comments'));
+    const replies = snap.docs.filter(d => d.data().parentId === commentId);
+    if (!skipConfirm && !confirm('Delete this comment by ' + (name || 'Anonymous') + (replies.length ? ` and its ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : '') + '?')) return false;
+    const ids = [commentId, ...replies.map(d => d.id)];
+    for (const r of replies) await fb.deleteDoc(r.ref);
+    await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', commentId));
+    for (const req of state.requests.filter(r => r.articleId === articleId && ids.includes(r.commentId))) {
+      await fb.deleteDoc(fb.doc(fb.db, 'removalRequests', req.id));
+    }
+    toast('Comment deleted');
+    await loadRequests();
+    return true;
+  } catch (e) {
+    console.error(e);
+    toast(e.code === 'permission-denied' ? 'Only the chief editor can delete comments.' : 'Could not delete the comment.');
+    return false;
+  }
+}
+
+function renderRequests() {
+  const list = $('post-list');
+  list.replaceChildren();
+  const reqs = [...state.requests].sort((a, b) => millis(a.createdAt) - millis(b.createdAt));
+  if (!reqs.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No removal requests. When another writer asks for a comment to be removed, it appears here.';
+    list.append(li);
+    return;
+  }
+  const site = $('site-link').href.replace(/[^/]*$/, '');
+  for (const r of reqs) {
+    const li = document.createElement('li');
+    li.className = 'post unread';
+    const top = document.createElement('div');
+    top.className = 'post-top';
+    const h = document.createElement('h3');
+    h.textContent = 'Comment by ' + (r.commentName || 'Anonymous');
+    const badge = document.createElement('span');
+    badge.className = 'badge draft';
+    badge.textContent = 'On: ' + (r.articleTitle || 'article');
+    top.append(h, badge);
+    const ex = document.createElement('p');
+    ex.className = 'excerpt quoted';
+    ex.textContent = r.commentText || '(empty)';
+    const meta = document.createElement('p');
+    meta.className = 'meta';
+    meta.textContent = 'Requested by ' + (r.requestedBy || '?') + (r.reason ? ' · Reason: ' + r.reason : ' · No reason given');
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.append(
+      button('Approve & delete comment', 'danger small', async () => {
+        if (!confirm('Delete this comment by ' + (r.commentName || 'Anonymous') + ' (and any replies to it)?')) return;
+        await deleteCommentThread(r.articleId, r.commentId, r.commentName, true);
+      }),
+      button('Keep comment', 'ghost small', async () => {
+        try { await fb.deleteDoc(fb.doc(fb.db, 'removalRequests', r.id)); toast('Request rejected: the comment stays'); await loadRequests(); }
+        catch (e) { console.error(e); toast('Could not update the request.'); }
+      }),
+    );
+    const view = document.createElement('a');
+    view.className = 'view-link';
+    view.href = site + 'article.html?id=' + encodeURIComponent(r.articleId);
+    view.target = '_blank';
+    view.rel = 'noopener';
+    view.textContent = 'View article ↗';
+    actions.append(view);
+    li.append(top, ex, meta, actions);
+    list.append(li);
   }
 }
 

@@ -7,6 +7,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // The chief editor (super-admin): only they can delete comments and read the Letterbox.
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.token.email == 'senujaganganath@gmail.com';
+    }
+
     function isWriter() {
       return request.auth != null
         && request.auth.token.email in [
@@ -67,9 +72,10 @@ service cloud.firestore {
           && request.resource.data.text.size() > 1 && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time
           && get(/databases/$(database)/documents/articles/$(articleId)).data.published == true;
-        // Nobody can edit a comment; only writers can delete them.
+        // Nobody can edit a comment; only the chief editor can delete them
+        // (other writers send a removal request instead).
         allow update: if false;
-        allow delete: if isWriter();
+        allow delete: if isSuperAdmin();
       }
 
       // Pictures uploaded on the Writers' Desk (stored as compressed image data).
@@ -99,9 +105,9 @@ service cloud.firestore {
     }
 
     match /submissions/{subId} {
-      // Anyone can send one; only the writers can read, update or delete them.
+      // Anyone can send one; only the chief editor can read, update or delete them.
       allow create: if validSubmission();
-      allow read, update, delete: if isWriter();
+      allow read, update, delete: if isSuperAdmin();
 
       // Pictures sent with a submission: only allowed in the first 10 minutes after it was sent.
       match /images/{imageId} {
@@ -110,8 +116,27 @@ service cloud.firestore {
           && request.resource.data.data is string
           && request.resource.data.data.size() < 1000000
           && request.time < get(/databases/$(database)/documents/submissions/$(subId)).data.createdAt + duration.value(10, 'm');
-        allow read, delete: if isWriter();
+        allow read, delete: if isSuperAdmin();
       }
+    }
+
+    // ---------- Comment removal requests (writers ask, the chief editor decides) ----------
+    match /removalRequests/{reqId} {
+      allow read: if isWriter() || isSuperAdmin();
+      allow create: if isWriter()
+        && request.resource.data.keys().hasOnly(['articleId', 'articleTitle', 'commentId', 'commentName', 'commentText', 'reason', 'requestedBy', 'createdAt'])
+        && request.resource.data.articleId is string && request.resource.data.articleId.size() <= 60
+        && request.resource.data.commentId is string && request.resource.data.commentId.size() <= 60
+        && request.resource.data.articleTitle is string && request.resource.data.articleTitle.size() <= 200
+        && request.resource.data.commentName is string && request.resource.data.commentName.size() <= 50
+        && request.resource.data.commentText is string && request.resource.data.commentText.size() <= 2000
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 300
+        && request.resource.data.requestedBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      // The chief editor approves/rejects; a writer can cancel their own request.
+      allow delete: if isSuperAdmin()
+        || (isWriter() && resource.data.requestedBy == request.auth.token.email);
     }
   }
 }
