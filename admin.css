@@ -219,3 +219,21 @@ button:disabled { opacity: 0.6; cursor: wait; }
 }
 .image-list img { width: 100%; height: 72px; object-fit: cover; border-radius: 4px; background: var(--card); }
 .image-list button { padding: 3px 8px; font-size: 0.75rem; }
+
+/* ---------- Letterbox ---------- */
+.badges { display: flex; gap: 6px; flex-shrink: 0; }
+.badge.kind-report { background: #e0e7ff; color: #3730a3; }
+.badge.kind-article { background: var(--accent-soft); color: var(--accent); }
+.post.unread { border-left: 4px solid var(--accent); }
+.post.unread h3 { font-weight: 800; }
+.viewer-kind { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.viewer h2 { font-size: 1.4rem; margin: 4px 0; }
+.viewer-body {
+  margin: 16px 0; padding: 16px; max-height: 65vh; overflow: auto;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 6px;
+  line-height: 1.6; overflow-wrap: anywhere;
+}
+.viewer-body p { min-height: 0.6em; }
+.viewer-body figure { margin: 12px 0; }
+.viewer-body img { max-width: 100%; border-radius: 4px; display: block; }
+.viewer-body figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 4px; }

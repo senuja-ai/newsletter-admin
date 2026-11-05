@@ -55,7 +55,12 @@ service cloud.firestore {
       match /comments/{commentId} {
         // Anyone can read comments and add one to a published article.
         allow read: if true;
-        allow create: if request.resource.data.keys().hasOnly(['name', 'text', 'createdAt'])
+        // A reply also stores which comment it belongs to (parentId) and who it answers (replyTo).
+        allow create: if request.resource.data.keys().hasOnly(['name', 'text', 'createdAt', 'parentId', 'replyTo'])
+          && request.resource.data.get('parentId', '') is string
+          && request.resource.data.get('parentId', '').size() <= 40
+          && request.resource.data.get('replyTo', '') is string
+          && request.resource.data.get('replyTo', '').size() <= 50
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 50
           && request.resource.data.text is string
@@ -77,6 +82,35 @@ service cloud.firestore {
           && request.resource.data.data.size() < 1000000;
         allow update: if false;
         allow delete: if isWriter();
+      }
+    }
+
+    // ---------- Letterbox: anonymous reports and article submissions ----------
+    function validSubmission() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['type', 'title', 'name', 'body', 'imageCount', 'status', 'createdAt'])
+        && d.type in ['report', 'article']
+        && d.title is string && d.title.size() <= 200
+        && d.name is string && d.name.size() <= 80
+        && d.body is string && d.body.size() > 0 && d.body.size() <= 450000
+        && d.imageCount is int && d.imageCount >= 0 && d.imageCount <= 10
+        && d.status == 'new'
+        && d.createdAt == request.time;
+    }
+
+    match /submissions/{subId} {
+      // Anyone can send one; only the writers can read, update or delete them.
+      allow create: if validSubmission();
+      allow read, update, delete: if isWriter();
+
+      // Pictures sent with a submission: only allowed in the first 10 minutes after it was sent.
+      match /images/{imageId} {
+        allow create: if request.resource.data.keys().hasOnly(['data', 'type'])
+          && request.resource.data.type in ['image/webp', 'image/jpeg', 'image/png', 'image/gif']
+          && request.resource.data.data is string
+          && request.resource.data.data.size() < 1000000
+          && request.time < get(/databases/$(database)/documents/submissions/$(subId)).data.createdAt + duration.value(10, 'm');
+        allow read, delete: if isWriter();
       }
     }
   }

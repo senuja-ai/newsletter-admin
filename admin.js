@@ -21,6 +21,12 @@ const ARTICLES = {
   key: 'articles', label: 'Articles', title: 'Title', body: 'Article', maxWords: 100000, article: true,
   hint: 'Full articles with their own page and a comments section. Every published article gets a summary card in the Articles section of the newsletter, linking to its page. Up to 100,000 words, with images.',
 };
+// Reports and article submissions sent in through the newsletter's Letterbox page.
+const LETTERBOX = {
+  key: 'letterbox', label: 'Letterbox', letterbox: true,
+  hint: 'Anonymous reports and article submissions from readers. Open one to read it; article submissions can be turned into an article draft (with their images) in one click.',
+};
+
 const collectionFor = key => (key === 'articles' ? 'articles' : 'posts');
 
 // What the newsletter shows right now (the default text in newsletter/index.html).
@@ -68,7 +74,7 @@ function updateWordCount() {
   c.textContent = n + ' / ' + max + ' words';
   c.classList.toggle('over', n > max);
 }
-const state = { section: 'feature', posts: [], articles: [], editingId: null, user: null };
+const state = { section: 'feature', posts: [], articles: [], submissions: [], viewingId: null, editingId: null, user: null };
 let fb; // Firebase functions + instances
 
 const isConfigured = firebaseConfig && firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PASTE');
@@ -101,9 +107,11 @@ async function start() {
       $('user-email').textContent = user.email;
       await loadPosts();
       await loadArticles();
+      await loadSubmissions();
     } else {
       state.posts = [];
       state.articles = [];
+      state.submissions = [];
     }
   });
 }
@@ -164,7 +172,12 @@ function wireUpUI() {
   art.dataset.key = ARTICLES.key;
   art.setAttribute('role', 'tab');
   art.addEventListener('click', () => { state.section = ARTICLES.key; closeEditor(); render(); });
-  tabs.append(divider, art);
+  const lb = document.createElement('button');
+  lb.type = 'button';
+  lb.dataset.key = LETTERBOX.key;
+  lb.setAttribute('role', 'tab');
+  lb.addEventListener('click', () => { state.section = LETTERBOX.key; closeEditor(); render(); });
+  tabs.append(divider, art, lb);
 }
 
 function friendlyAuthError(err) {
@@ -388,7 +401,7 @@ async function importDefaults(keys) {
 
 /* ---------- Rendering ---------- */
 
-const currentSection = () => (state.section === ARTICLES.key ? ARTICLES : SECTIONS.find(s => s.key === state.section));
+const currentSection = () => (state.section === ARTICLES.key ? ARTICLES : state.section === LETTERBOX.key ? LETTERBOX : SECTIONS.find(s => s.key === state.section));
 
 function render() {
   const s = currentSection();
@@ -396,8 +409,11 @@ function render() {
   // tabs
   for (const b of $('tabs').children) {
     if (!b.dataset.key) continue; // divider
-    const n = b.dataset.key === ARTICLES.key ? state.articles.length : state.posts.filter(p => p.section === b.dataset.key).length;
-    const sec = b.dataset.key === ARTICLES.key ? ARTICLES : SECTIONS.find(x => x.key === b.dataset.key);
+    const k = b.dataset.key;
+    const n = k === ARTICLES.key ? state.articles.length
+      : k === LETTERBOX.key ? state.submissions.filter(x => x.status === 'new').length
+      : state.posts.filter(p => p.section === k).length;
+    const sec = k === ARTICLES.key ? ARTICLES : k === LETTERBOX.key ? LETTERBOX : SECTIONS.find(x => x.key === k);
     b.textContent = sec.label;
     if (n) { const c = document.createElement('span'); c.className = 'count'; c.textContent = n; b.append(c); }
     b.setAttribute('aria-selected', String(b.dataset.key === s.key));
@@ -406,6 +422,9 @@ function render() {
   $('section-title').textContent = s.label;
   $('section-hint').textContent = s.hint;
   $('new-btn').textContent = s.article ? '+ New article' : '+ New post';
+  $('new-btn').hidden = !!s.letterbox;
+  if (s.letterbox) return renderLetterbox();
+  $('viewer').hidden = true;
   if (s.article) return renderArticleList();
 
   const posts = state.posts
@@ -653,14 +672,16 @@ async function loadComments(articleId) {
       const top = document.createElement('div');
       top.className = 'c-top';
       const who = document.createElement('strong');
-      who.textContent = c.name || 'Anonymous';
+      who.textContent = (c.name || 'Anonymous') + (c.replyTo ? '  ↳ reply to ' + c.replyTo : '');
       const when = document.createElement('span');
       when.className = 'c-when';
       when.textContent = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
       who.append(when);
       top.append(who, button('Delete', 'danger small', async () => {
-        if (!confirm('Delete this comment by ' + (c.name || 'Anonymous') + '?')) return;
+        const replies = comments.filter(r => r.parentId === c.id);
+        if (!confirm('Delete this comment by ' + (c.name || 'Anonymous') + (replies.length ? ` and its ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : '') + '?')) return;
         try {
+          for (const r of replies) await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', r.id));
           await fb.deleteDoc(fb.doc(fb.db, 'articles', articleId, 'comments', c.id));
           toast('Comment deleted');
           loadComments(articleId);
@@ -675,6 +696,177 @@ async function loadComments(articleId) {
     console.error(e);
     $('comments-admin-title').textContent = 'Comments could not be loaded';
   }
+}
+
+/* ---------- Letterbox (reader submissions) ---------- */
+
+async function loadSubmissions() {
+  try {
+    const snap = await fb.getDocs(fb.collection(fb.db, 'submissions'));
+    state.submissions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error(err);
+    state.submissions = [];
+    if (state.section === LETTERBOX.key) toast(err.code === 'permission-denied'
+      ? 'The Letterbox is not allowed yet: publish the new Firestore rules (see README).'
+      : 'Could not load the Letterbox.');
+  }
+  render();
+}
+
+const STATUS_LABEL = { new: 'New', read: 'Read', drafted: 'Made into draft' };
+
+function renderLetterbox() {
+  const list = $('post-list');
+  list.replaceChildren();
+  const subs = [...state.submissions].sort((a, b) => millis(b.createdAt) - millis(a.createdAt));
+  if (!subs.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'The Letterbox is empty. Reports and article submissions from readers will appear here.';
+    list.append(li);
+    return;
+  }
+  for (const x of subs) {
+    const li = document.createElement('li');
+    li.className = 'post' + (x.id === state.viewingId ? ' editing' : '') + (x.status === 'new' ? ' unread' : '');
+    const top = document.createElement('div');
+    top.className = 'post-top';
+    const h = document.createElement('h3');
+    h.textContent = x.title || (x.type === 'report' ? '(report without a subject)' : '(untitled article)');
+    const badges = document.createElement('span');
+    badges.className = 'badges';
+    const kind = document.createElement('span');
+    kind.className = 'badge ' + (x.type === 'article' ? 'kind-article' : 'kind-report');
+    kind.textContent = x.type === 'article' ? 'Article' : 'Report';
+    const st = document.createElement('span');
+    st.className = 'badge ' + (x.status === 'new' ? 'live' : 'draft');
+    st.textContent = STATUS_LABEL[x.status] || x.status;
+    badges.append(kind, st);
+    top.append(h, badges);
+    const ex = document.createElement('p');
+    ex.className = 'excerpt';
+    ex.textContent = String(x.body || '').replace(/!\[[^\]]*\]\(img:[^)]*\)/g, '[image]').slice(0, 300);
+    const meta = document.createElement('p');
+    meta.className = 'meta';
+    const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    meta.textContent = ['From ' + (x.name || 'Anonymous'), when, countWords(x.body || '') + ' words', x.imageCount ? x.imageCount + ' image' + (x.imageCount === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.append(button('Open', 'ghost small', () => openSubmission(x)));
+    actions.append(button(x.status === 'new' ? 'Mark as read' : 'Mark as new', 'ghost small', () => setSubmissionStatus(x, x.status === 'new' ? 'read' : 'new')));
+    if (x.type === 'article') actions.append(button('Make article draft', 'ghost small', () => makeArticleDraft(x)));
+    actions.append(button('Delete', 'danger small', () => deleteSubmission(x)));
+    li.append(top, ex, meta, actions);
+    list.append(li);
+  }
+}
+
+async function setSubmissionStatus(x, status, quiet) {
+  try {
+    await fb.updateDoc(fb.doc(fb.db, 'submissions', x.id), { status });
+    x.status = status;
+    if (!quiet) toast(status === 'read' ? 'Marked as read' : status === 'new' ? 'Marked as new' : 'Updated');
+    render();
+  } catch (err) { console.error(err); toast('Could not update.'); }
+}
+
+async function submissionImages(id) {
+  const snap = await fb.getDocs(fb.collection(fb.db, 'submissions', id, 'images'));
+  const map = {};
+  snap.forEach(d => { map[d.id] = d.data(); });
+  return map;
+}
+
+// Shows the full submission in the right-hand panel (text and pictures).
+async function openSubmission(x) {
+  closeEditor();
+  state.section = LETTERBOX.key;
+  state.viewingId = x.id;
+  $('viewer-kind').textContent = x.type === 'article' ? 'Article submission' : 'Anonymous report';
+  $('viewer-title').textContent = x.title || (x.type === 'report' ? '(no subject)' : '(untitled)');
+  const when = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate().toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' }) : '';
+  $('viewer-meta').textContent = ['From ' + (x.name || 'Anonymous'), when, countWords(x.body || '') + ' words'].filter(Boolean).join(' · ');
+  const body = $('viewer-body');
+  body.replaceChildren();
+  $('viewer-actions').replaceChildren(
+    ...(x.type === 'article' ? [button('Make article draft', 'primary', () => makeArticleDraft(x))] : []),
+    button('Delete', 'danger', () => deleteSubmission(x)),
+    button('Close', 'ghost', () => { $('viewer').hidden = true; state.viewingId = null; render(); }),
+  );
+  $('viewer').hidden = false;
+  if (x.status === 'new') setSubmissionStatus(x, 'read', true);
+  render();
+  if (window.innerWidth < 900) $('viewer').scrollIntoView({ behavior: 'smooth' });
+
+  let pics = {};
+  if (x.imageCount) { try { pics = await submissionImages(x.id); } catch (e) { console.error(e); } }
+  if (state.viewingId !== x.id) return;
+  for (const line of String(x.body || '').split('\n')) {
+    const m = line.trim().match(/^!\[([^\]]*)\]\(img:([^)\s]+)\)$/);
+    if (m) {
+      const pic = pics[m[2]];
+      if (pic && /^data:image\/(png|jpeg|webp|gif);base64,/.test(pic.data)) {
+        const fig = document.createElement('figure');
+        const img = document.createElement('img');
+        img.src = pic.data;
+        img.alt = m[1];
+        fig.append(img);
+        if (m[1] && m[1] !== 'Caption') { const cap = document.createElement('figcaption'); cap.textContent = m[1]; fig.append(cap); }
+        body.append(fig);
+      }
+      continue;
+    }
+    const p = document.createElement('p');
+    p.textContent = line;
+    body.append(p);
+  }
+}
+
+// Copies an article submission (and its pictures) into a new, unpublished article.
+async function makeArticleDraft(x) {
+  try {
+    const ref = fb.doc(fb.collection(fb.db, 'articles'));
+    const pics = x.imageCount ? await submissionImages(x.id) : {};
+    for (const [id, pic] of Object.entries(pics)) {
+      await fb.setDoc(fb.doc(fb.db, 'articles', ref.id, 'images', id), { data: pic.data, type: pic.type, name: 'from Letterbox', createdAt: fb.serverTimestamp() });
+    }
+    await fb.setDoc(ref, {
+      title: (x.title || 'Untitled submission').slice(0, 200),
+      subtitle: '',
+      authorName: (x.name || 'Anonymous reader').slice(0, 80),
+      coverUrl: '',
+      body: x.body || '',
+      published: false,
+      createdAt: fb.serverTimestamp(),
+      updatedAt: fb.serverTimestamp(),
+      author: state.user.email,
+      updatedBy: state.user.email,
+    });
+    await setSubmissionStatus(x, 'drafted', true);
+    toast('Article draft created ✓ Check it, then publish when ready.');
+    $('viewer').hidden = true;
+    state.viewingId = null;
+    state.section = ARTICLES.key;
+    await loadArticles();
+    const a = state.articles.find(y => y.id === ref.id);
+    if (a) openEditor(a);
+  } catch (err) {
+    console.error(err);
+    toast(err.code === 'permission-denied' ? 'Not allowed: publish the new Firestore rules.' : 'Could not create the draft.');
+  }
+}
+
+async function deleteSubmission(x) {
+  if (!confirm('Delete this ' + (x.type === 'article' ? 'article submission' : 'report') + ' for good?')) return;
+  try {
+    const pics = await fb.getDocs(fb.collection(fb.db, 'submissions', x.id, 'images'));
+    for (const d of pics.docs) await fb.deleteDoc(d.ref);
+    await fb.deleteDoc(fb.doc(fb.db, 'submissions', x.id));
+    if (state.viewingId === x.id) { $('viewer').hidden = true; state.viewingId = null; }
+    toast('Deleted');
+    await loadSubmissions();
+  } catch (err) { console.error(err); toast('Could not delete.'); }
 }
 
 function button(text, cls, onClick) {

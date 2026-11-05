@@ -51,3 +51,13 @@ Articles can be up to 100,000 words. In the article editor use
 shrunk (max 1600 px, under ~700 KB) and stored with the article in Firestore,
 because Firebase Storage is no longer free. Images need the `images` part of
 `firestore.rules`.
+
+### Comments and the Letterbox
+- Comments can be replied to; deleting a comment also deletes its replies.
+  Readers wait 15 seconds while a comment "uploads", and a simple spam check
+  (repeats, no spaces, capitals, links) gives a 5-minute timeout.
+- The **Letterbox** tab shows anonymous reports and article submissions sent
+  from the newsletter's Letterbox page (one per reader every 30 minutes).
+  Open one to read it; **Make article draft** copies an article submission
+  (with its pictures) into a new unpublished article on the Articles tab.
+- These need the `comments` and `submissions` parts of `firestore.rules`.
